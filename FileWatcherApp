@@ -1,0 +1,284 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Navigation;
+using System.Windows.Shapes;
+using System.IO;
+using System.Security.Permissions;
+using System.Collections;
+
+
+namespace FileWatcherApp
+{
+    /// <summary>
+    /// Interaction logic for MainWindow.xaml
+    /// </summary>
+    public partial class MainWindow : Window
+    {
+        private int x = 1;
+        private DateTime fsLastRaised;
+        private FileSystemWatcher watcher;
+        private string watchingFolder = null;
+        private ArrayList foldersToWatch = new ArrayList();
+        private string changedFilePath = null;
+        private string extension = null;
+        private  bool settingFile = false;
+
+        public MainWindow()
+        {
+            InitializeComponent();
+
+        }
+        /*
+         * Set File button watcher. Will open an input box if clicked to set a new file/folder to watch.
+        */
+        private void setFile_Button_Click(object sender, RoutedEventArgs e)
+        {
+           // FileInputBox.Visibility = System.Windows.Visibility.Visible;
+            TextBoxLabel.Text = "Please enter the file to watch.";
+            InputBox.Visibility = System.Windows.Visibility.Visible;
+            settingFile = true;
+        }
+        /*
+         * Start button watcher from the top toolbar. Will start the actual file watcher.
+         * Sets up the 4 event handlers to handle any changes in the file. 
+         * Watches for: Renaming files, deleting files, creating files, and changing files(only prompts on save)
+         * 
+         */
+
+        //TODO: on start save an rev_x_onStart to a new spot. As an original. 
+        private void start_Button_Click(object sender, RoutedEventArgs e)
+        {
+            if (watchingFolder == null) //Cannot start without a file to watch.
+            {
+                setFile_Button_Click(null, null);
+            }
+            else
+            {
+                try
+                {
+                    watcher = new FileSystemWatcher(watchingFolder, "*.*");
+                    watcher.EnableRaisingEvents = true;
+                    watcher.IncludeSubdirectories = true;
+
+                    watcher.Changed += new FileSystemEventHandler(onChange);
+                    watcher.Created += new FileSystemEventHandler(onCreate);
+                    watcher.Deleted += new FileSystemEventHandler(onDelete);
+                    watcher.Renamed += new RenamedEventHandler(onRename);
+                    StartButton.IsEnabled = false; //Prevents accidental restarts
+                    StopButton.IsEnabled = true;
+                    setFile_button.IsEnabled = false; //don't change whats being watched when running
+                    System.IO.File.Copy(watchingFolder, "C:\\Users\\Eric.Wagner\\TestingFileWatcher\\Rev_0_OnStart"); //only works for files
+
+                }
+                catch (Exception ex)
+                {
+                    MessageBoxResult result = MessageBox.Show("Invalid File entered.", "Invalid File!", MessageBoxButton.OK, MessageBoxImage.Question);
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        setFile_Button_Click(null, null);
+                    }
+                }
+            }
+
+        }
+        /*
+         * Stop button watcher for the toolbar.
+         * It will clear the the event handlers and disable the stop button and enable the start button.
+         */
+        private void stop_Button_Click(object sender, RoutedEventArgs e)
+        {
+            StopButton.IsEnabled = false; //Clicking double stop will give a null pointer, so it is disabled if the app isn't currently running.
+            StartButton.IsEnabled = true;
+            setFile_button.IsEnabled = true;
+            watcher.Created -= onCreate;
+            watcher.Deleted -= onDelete;
+            watcher.Renamed -= onRename;
+            watcher.Changed -= onChange;
+        }
+
+        /*
+         * Clear button watcher for the toolbar.
+         * It will clear the contents of the textbox, which has a list of the most recent changes.
+        */
+        private void clear_Button_Click(object sender, RoutedEventArgs e)
+        {
+            listBox1.Items.Clear();
+        }
+
+        /*
+         *Enter button watcher for the actual input box. Will collapse the input box and then handle the data. 
+        */
+        private void enter_Button_Click(object sender, RoutedEventArgs e)
+        {
+            if (settingFile)
+            {
+                InputBox.Visibility = System.Windows.Visibility.Collapsed;
+                watchingFolder = InputTextBox.Text;
+                settingFile = false;
+                TextBoxLabel.Text = "Please enter the changes:";
+                InputTextBox.Clear();
+            }
+            else
+            {
+                // enterButton Clicked! Hides InputBox and handles the input text.
+                // Going to get the path for what changed and resave it somewhere else with a new name. eg Rev_x_"why it changed". x is a xer
+                String Textinput = InputTextBox.Text;
+                listBox1.Items.Add(Textinput + ": " + changedFilePath);
+                System.IO.File.Copy(changedFilePath, "C:\\Users\\Eric.Wagner\\TestingFileWatcher\\Rev_" + x + "_" + Textinput + extension);
+                // Clear InputBox.
+                InputTextBox.Clear();
+                changedFilePath = "";
+                extension = "";
+                x++;
+            }
+            InputBox.Visibility = System.Windows.Visibility.Collapsed;
+
+        }
+        /*
+         *Clear button watcher for the actual input box. Clears out the data in the input box. 
+         */
+        private void input_ClearButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Clear InputBox.
+            InputTextBox.Clear();
+        }
+
+
+        /*
+         * Event handler for when a new file is created. 
+         */ 
+        //TODO: work on created file. 
+        protected void onCreate(object fscreated, FileSystemEventArgs Eventocc)
+        {
+            try
+            {
+                //to avoid same process to be repeated, if the time between two events is more than 500 milli seconds only the second process will be considered 
+                if (DateTime.Now.Subtract(fsLastRaised).TotalMilliseconds > 500)
+                {
+                    //to get the newly created file name and extension and also the name of the event occured in the watching folder
+                    string CreatedFileName = Eventocc.Name;
+                    FileInfo createdFile = new FileInfo(CreatedFileName);
+                    string extension = createdFile.Extension;
+                    string eventoccured = Eventocc.ChangeType.ToString();
+                    //Delay is given to the thread for avoiding same process to be repeated
+                    System.Threading.Thread.Sleep(100);
+                    //dispatcher invoke 
+                    this.Dispatcher.Invoke((Action)(() =>
+                    {
+                        this.Activate();
+                        //give a notification in the application about the change in folder
+                        //listBox1.Items.Add(x + ". Newly Created File Name: " + CreatedFileName + "; Event Occured: " + eventoccured);
+                        InputBox.Visibility = System.Windows.Visibility.Visible;
+                        
+                    }));
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString());
+            }
+        }
+        /*
+         * Event handler for when a new file is renamed. 
+         */
+        protected void onRename(object fschanged, RenamedEventArgs changeEvent)
+        {
+            try
+            {
+                if (DateTime.Now.Subtract(fsLastRaised).TotalMilliseconds > 500)
+                {
+                    fsLastRaised = DateTime.Now;
+                    System.Threading.Thread.Sleep(100);
+
+                    changedFilePath = changeEvent.FullPath; //Gets the path to the changed document.
+                    string CreatedFileName = changeEvent.Name;
+                    FileInfo createdFile = new FileInfo(CreatedFileName);
+                    this.extension = createdFile.Extension; 
+                    
+                    this.Dispatcher.Invoke((Action)(() =>
+                    {
+                        this.Activate();
+                      //  listBox1.Items.Add(x + ". Renamed Object: " + changeEvent.Name + "; oldname: "
+                                          // + changeEvent.OldName + "; Event Occured: " + changeEvent.ChangeType.ToString());
+                        InputBox.Visibility = System.Windows.Visibility.Visible;
+                    }));
+                }
+            }
+            catch (Exception ex)
+            {
+            }
+        }
+
+        /*
+         * Event handler for when a new file is deleted. 
+         */
+        protected void onDelete(object fschanged, FileSystemEventArgs changeEvent)
+        {
+            try
+            {
+                if (DateTime.Now.Subtract(fsLastRaised).TotalMilliseconds > 500)
+                {
+                    fsLastRaised = DateTime.Now;
+                    System.Threading.Thread.Sleep(100);
+
+                    changedFilePath = changeEvent.FullPath; //Gets the path to the changed document.
+                    string CreatedFileName = changeEvent.Name;
+                    FileInfo createdFile = new FileInfo(CreatedFileName);
+                    this.extension = createdFile.Extension; 
+                    
+                    this.Dispatcher.Invoke((Action)(() =>
+                    {
+                        this.Activate();
+                        //to display a notification about the delete in listbox
+                      //  listBox1.Items.Add(x + ". Deleted Object Name :" + changeEvent.Name + ";Event Occured: " + changeEvent.ChangeType.ToString());
+                        InputBox.Visibility = System.Windows.Visibility.Visible;
+                    }));
+                }
+            }
+            catch (Exception ex)
+            {
+            }
+        }
+
+        /*
+         * Event handler for when a new file is changed(saved). 
+         */
+        protected void onChange(object fschanged, FileSystemEventArgs changeEvent)
+        {
+            try
+            {
+                if (DateTime.Now.Subtract(fsLastRaised).TotalMilliseconds > 500)
+                {
+                    fsLastRaised = DateTime.Now;
+                    System.Threading.Thread.Sleep(100);
+
+                    changedFilePath = changeEvent.FullPath; //Gets the path to the changed document.
+                    string CreatedFileName = changeEvent.Name;
+                    FileInfo createdFile = new FileInfo(CreatedFileName);
+                    this.extension = createdFile.Extension; 
+                    this.Dispatcher.Invoke((Action)(() =>
+                    {
+                        this.Activate();
+                        //to display a notification about the delete in listbox
+                       // listBox1.Items.Add(x + ". Changed Object Name: " + fullName + "; Event Occured: " + changeEvent.ChangeType.ToString());
+                        InputBox.Visibility = System.Windows.Visibility.Visible;
+                        Console.ReadLine();
+                    }));
+                }
+            }
+            catch (Exception ex)
+            {
+            }
+        }
+    }
+}
